@@ -6,3 +6,4 @@ mcp
 langgraph
 langchain-core
 langchain-cerebras
+APScheduler

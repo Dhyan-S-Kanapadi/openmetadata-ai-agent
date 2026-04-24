@@ -1,25 +1,35 @@
 # DataSentinel
 
-DataSentinel is an autonomous OpenMetadata monitoring and workflow agent for data teams. It combines a natural-language assistant with a production-style monitoring engine that scans platform health, detects governance and quality issues, and can take autonomous remediation actions such as retriggering failed ingestion pipelines.
+**An autonomous OpenMetadata monitoring and workflow agent for data teams.**
 
-The project started as `openmetadata-workflow-agent` for the Back to the Metadata hackathon and is being upgraded into DataSentinel.
+DataSentinel combines a natural-language assistant with a production-grade monitoring engine that scans platform health, detects anomalies, applies safe remediation policies, and sends alerts—all autonomously. It originated as `openmetadata-workflow-agent` for the Back to the Metadata hackathon and is now evolved into DataSentinel.
+
+## Project Overview
+
+- **Repository**: Dhyan-S-Kanapadi/DataSentinel
+- **Language**: Python (100%)
+- **Created**: April 18, 2026
+- **Status**: Active Development
+- **License**: Not specified
+- **Visibility**: Public
+- **Size**: 13 KB
 
 ## What It Does
 
-- Monitors OpenMetadata tables, ownership, documentation, ingestion pipelines, quality failures, and lineage.
-- Calculates a deterministic platform health score from `0` to `100`.
-- Categorizes anomalies as `critical`, `warning`, or `info`.
-- Triggers failed ingestion pipelines automatically when configured.
-- Uses a policy layer to decide what can be fixed safely and what must be escalated.
-- Sends customer notifications through webhook or email when manual intervention is needed.
-- Stores timestamped monitoring reports in JSONL and latest-report JSON format.
-- Provides a Streamlit DataSentinel dashboard with monitoring controls, report history, and a secondary assistant tab.
-- Exposes an MCP server for compatible clients.
-- Can run monitoring manually or on a schedule through APScheduler.
+- **Monitors OpenMetadata** for tables, ownership, documentation, ingestion pipelines, quality failures, and lineage.
+- **Calculates Platform Health**: Generates a deterministic health score from 0 to 100.
+- **Categorizes Anomalies**: Classifies issues as `critical`, `warning`, or `info`.
+- **Auto-Remediation**: Automatically triggers failed ingestion pipelines when configured.
+- **Policy Layer**: Decides what can be fixed safely and what must be escalated to teams.
+- **Customer Notifications**: Sends alerts through webhook or email when manual intervention is needed.
+- **Report Storage**: Stores timestamped monitoring reports in JSONL and latest-report JSON formats.
+- **Streamlit Dashboard**: Provides a comprehensive monitoring interface with controls, report history, and assistant capabilities.
+- **MCP Server**: Exposes an MCP (Model Context Protocol) server for compatible clients.
+- **Flexible Scheduling**: Runs monitoring manually or on a schedule via APScheduler.
 
 ## Architecture
 
-```text
+```
 Streamlit UI / MCP Client / Manual Python Call
         |
         v
@@ -32,36 +42,37 @@ tools.py
 OpenMetadata API
 ```
 
-The project has two main paths:
+### Two Main Execution Paths
 
-- Conversational workflow path: `app.py` -> `agent.py` -> `tools.py` -> OpenMetadata.
-- Autonomous monitoring path: `monitor.py` -> `tools.py` -> OpenMetadata.
+1. **Conversational Workflow**: `app.py` → `agent.py` → `tools.py` → OpenMetadata
+2. **Autonomous Monitoring**: `monitor.py` → `tools.py` → OpenMetadata
 
-## Key Files
+## Key Files & Structure
 
-```text
-openmetadata-workflow-agent/
-+-- app.py                 Streamlit DataSentinel dashboard and assistant
-+-- agent.py               LangGraph + Cerebras natural-language agent
-+-- monitor.py             DataSentinel autonomous monitoring engine
-+-- policy.py              Auto-fix and escalation decision policy
-+-- notifier.py            Customer webhook/email notification helpers
-+-- worker.py              Long-running scheduled monitoring process
-+-- tools.py               OpenMetadata API functions
-+-- server.py              FastMCP server
-+-- config.py              Environment-based configuration
-+-- test.py                OpenMetadata connection smoke test
-+-- requirements.txt       Python dependencies
-+-- data/                  Generated monitoring reports
-+-- .env                   Local secrets, not committed
-+-- .gitignore
+```
+DataSentinel/
+├── app.py                  # Streamlit DataSentinel dashboard and assistant
+├── agent.py                # LangGraph + Cerebras natural-language agent
+├── monitor.py              # DataSentinel autonomous monitoring engine
+├── policy.py               # Auto-fix and escalation decision policy layer
+├── notifier.py             # Customer webhook/email notification helpers
+├── worker.py               # Long-running scheduled monitoring process
+├── tools.py                # OpenMetadata API functions
+├── server.py               # FastMCP server for compatible clients
+├── config.py               # Environment-based configuration
+├── test.py                 # OpenMetadata connection smoke test
+├── requirements.txt        # Python dependencies
+├── data/                   # Generated monitoring reports (gitignored)
+├── .env                    # Local secrets (not committed)
+├── .gitignore              # Git ignore rules
+└── README.md               # This file
 ```
 
 ## Monitoring Engine
 
-`monitor.py` is the DataSentinel monitoring engine. Internally it is a LangGraph
-workflow with nodes for scanning, anomaly detection, remediation, policy,
-notification, report building, and persistence. It can be called directly:
+`monitor.py` is the core autonomous monitoring engine. It's built on LangGraph with nodes for scanning, anomaly detection, remediation, policy evaluation, notification, report building, and persistence.
+
+### Basic Usage
 
 ```python
 from monitor import run_monitoring_cycle
@@ -71,62 +82,51 @@ print(report.health_score)
 print(report.status)
 ```
 
-By default it writes:
+### Monitoring Checks
 
-```text
-data/monitor_findings.jsonl
-data/monitor_latest.json
-```
-
-The monitoring engine checks:
-
-- unowned tables
-- undocumented tables
-- failed data quality tests
-- failed ingestion pipelines
+The engine checks for:
+- Unowned tables
+- Undocumented tables
+- Failed data quality tests
+- Failed ingestion pipelines
 - OpenMetadata scan errors
 
-Each run follows this lifecycle:
+### Monitoring Lifecycle
 
-```text
-Detect -> Classify -> Decide -> Act -> Notify -> Record
+```
+Detect → Classify → Decide → Act → Notify → Record
 ```
 
-Severity mapping:
+### Severity Mapping
 
-```text
-critical  failed quality tests, failed pipelines
-warning   unowned tables, monitoring scan errors
-info      undocumented tables, empty table inventory
-```
+| Severity | Issues |
+|----------|--------|
+| **critical** | Failed quality tests, failed pipelines |
+| **warning** | Unowned tables, monitoring scan errors |
+| **info** | Undocumented tables, empty inventory |
 
-Failed pipelines are retriggered automatically unless disabled:
+### Policy Behavior
+
+| Category | Action |
+|----------|--------|
+| **Auto-fixable** | Failed ingestion pipelines |
+| **Manual review** | Data quality failures, monitoring scan failures, failed remediation |
+| **Informational** | Successful autonomous remediation summaries |
+
+### Pipeline Auto-Trigger
+
+Failed pipelines are retriggered automatically by default:
 
 ```python
 from monitor import run_monitoring_cycle
 
+# Disable auto-trigger if needed
 report = run_monitoring_cycle(trigger_failed_pipelines=False)
-```
-
-Policy behavior:
-
-```text
-Auto-fixable: failed ingestion pipelines
-Manual review: data quality failures, monitoring scan failures, failed remediation
-Informational: successful autonomous remediation summaries
 ```
 
 ## Scheduled Monitoring
 
-DataSentinel can run automatically with APScheduler:
-
-```python
-from monitor import start_scheduler
-
-scheduler = start_scheduler(interval_minutes=15)
-```
-
-Or create the scheduler without starting it:
+### One-Time Scheduler Creation
 
 ```python
 from monitor import create_scheduler
@@ -134,27 +134,35 @@ from monitor import create_scheduler
 scheduler = create_scheduler(interval_minutes=15)
 ```
 
-The project `.venv` has APScheduler available, and `requirements.txt` includes it for fresh installs.
+### Start Scheduler Immediately
 
-For a real always-on process, run the worker:
+```python
+from monitor import start_scheduler
 
-```powershell
+scheduler = start_scheduler(interval_minutes=15)
+```
+
+### Background Worker Process
+
+For production always-on monitoring:
+
+```bash
 python worker.py --interval-minutes 1
 ```
 
-The worker keeps the scheduler alive until stopped with `Ctrl+C`.
+Stop with `Ctrl+C`.
 
 ## Customer Notifications
 
-DataSentinel does not require customers to keep refreshing the app. When policy decides an issue needs attention, `notifier.py` can send alerts through configured channels.
+DataSentinel can alert teams through configured notification channels when policy escalates issues.
 
-Webhook alerts:
+### Webhook Alerts (Slack, Discord, etc.)
 
 ```env
 DATASENTINEL_WEBHOOK_URL=https://your-slack-or-discord-webhook-url
 ```
 
-Email alerts:
+### Email Alerts
 
 ```env
 DATASENTINEL_EMAIL_TO=customer@example.com
@@ -165,14 +173,14 @@ DATASENTINEL_EMAIL_PASSWORD=your-smtp-password
 DATASENTINEL_EMAIL_FROM=datasentinel@example.com
 ```
 
-If no notification channel is configured, the alert attempt is recorded as `skipped` in the monitoring report instead of crashing the monitor.
+If no notification channel is configured, alert attempts are recorded as `skipped` in the monitoring report instead of crashing.
 
 ## Agent Tools
 
-The natural-language agent can use these OpenMetadata functions:
+The natural-language agent has access to these OpenMetadata functions:
 
 | Tool | Purpose |
-| --- | --- |
+|------|---------|
 | `get_tables` | Fetch tables from OpenMetadata |
 | `get_unowned_tables` | Find tables with no owner |
 | `get_undocumented_tables` | Find tables with no description |
@@ -183,74 +191,94 @@ The natural-language agent can use these OpenMetadata functions:
 
 ## Environment Variables
 
-Create a `.env` file in the project root:
+Create a `.env` file in the project root with the following:
 
 ```env
+# Cerebras AI API
 CEREBRAS_API_KEY=your-cerebras-api-key
+
+# OpenMetadata Connection
 OPENMETADATA_URL=https://sandbox.open-metadata.org/api/v1
 
-# Use either JWT auth:
+# Authentication: Use either JWT or email/password
 OPENMETADATA_JWT_TOKEN=your-openmetadata-jwt-token
-
-# Or email/password auth if your OpenMetadata server allows it:
+# OR
 OPENMETADATA_EMAIL=your-email
 OPENMETADATA_PASSWORD=your-password
 
-# Optional customer alerting:
+# Optional: Customer Alerting
 DATASENTINEL_WEBHOOK_URL=https://your-slack-or-discord-webhook-url
 ```
 
-Do not commit `.env`.
+**Important**: Do not commit `.env` to version control.
 
-## Setup
+## Setup Instructions
 
-```powershell
+### 1. Create Virtual Environment
+
+```bash
 python -m venv .venv
+```
+
+### 2. Activate Virtual Environment
+
+**Windows:**
+```bash
 .venv\Scripts\activate
+```
+
+**Linux/macOS:**
+```bash
+source .venv/bin/activate
+```
+
+### 3. Install Dependencies
+
+```bash
 pip install -r requirements.txt
 ```
 
-## Run
+## Running DataSentinel
 
-Run the Streamlit dashboard:
+### Run Streamlit Dashboard
 
-```powershell
+```bash
 streamlit run app.py
 ```
 
-The Streamlit app opens on the Monitor tab. Use **Safe Scan** to inspect the
-platform without triggering pipelines or sending notifications, and use **Live
-Autonomous Scan** when you want DataSentinel to apply configured remediation and
-alerting behavior. The old natural-language assistant is still available under
-the Assistant tab for investigation.
+Opens the Monitor tab by default. Use:
+- **Safe Scan** to inspect without triggering pipelines or sending notifications
+- **Live Autonomous Scan** to apply configured remediation and alerting
 
-Run the MCP server:
+The Assistant tab provides the legacy natural-language assistant for investigation.
 
-```powershell
+### Run MCP Server
+
+```bash
 python server.py
 ```
 
-Run the OpenMetadata connection smoke test:
+### Test OpenMetadata Connection
 
-```powershell
+```bash
 python test.py
 ```
 
-Run one DataSentinel monitoring cycle:
+### Run Single Monitoring Cycle
 
-```powershell
+```bash
 python monitor.py
 ```
 
-Run the autonomous worker every minute:
+### Run Background Worker (Every Minute)
 
-```powershell
+```bash
 python worker.py --interval-minutes 1
 ```
 
-## Example Questions
+## Example Questions for Agent
 
-```text
+```
 Which tables have no owners?
 Which tables are undocumented?
 Show data quality failures.
@@ -259,30 +287,53 @@ What is the lineage of sample_data.ecommerce_db.shopify.orders?
 Trigger pipeline <pipeline-id>.
 ```
 
+## Output Files
+
+Monitoring reports are generated in the `data/` directory:
+
+- `data/monitor_findings.jsonl` – Timestamped monitoring reports
+- `data/monitor_latest.json` – Latest monitoring report snapshot
+
+Both are gitignored to prevent leaking sensitive data.
+
 ## Verification Status
 
-Current verified behavior:
+Current verified capabilities:
 
-- `monitor.py` compiles successfully.
-- Manual monitoring works through `run_monitoring_cycle()`.
-- APScheduler job creation works in the project `.venv`.
-- Health scoring works for clean, degraded, and scan-error cases.
-- Failed pipeline detection and autonomous trigger behavior work in mocked verification.
-- Policy decisions separate auto-fixed issues from manual-intervention issues.
-- Webhook notification success and skipped-notification behavior are verified with mocks.
-- Monitoring reports are persisted with timestamps.
-- The agent has robust tool-call parsing and final-answer extraction.
+✅ `monitor.py` compiles successfully
+✅ Manual monitoring works via `run_monitoring_cycle()`
+✅ APScheduler job creation in project `.venv`
+✅ Health scoring for clean, degraded, and scan-error cases
+✅ Failed pipeline detection and autonomous trigger behavior (mocked verification)
+✅ Policy decisions separate auto-fixed from manual-intervention issues
+✅ Webhook notification success and skipped-notification behavior (mocked)
+✅ Monitoring reports persisted with timestamps
+✅ Agent has robust tool-call parsing and final-answer extraction
 
 ## Hackathon Context
 
-- Event: Back to the Metadata, WeMakeDevs x OpenMetadata
-- Track: T-01 MCP Ecosystem and AI Agents
-- Team: AryaBit
-- Core sponsors used: OpenMetadata, Cerebras, MCP
+- **Event**: Back to the Metadata, WeMakeDevs x OpenMetadata
+- **Track**: T-01 MCP Ecosystem and AI Agents
+- **Team**: AryaBit
+- **Core Sponsors**: OpenMetadata, Cerebras, MCP
 
-## Security
+## Security Best Practices
 
-- Secrets are loaded from `.env`.
-- `.env` and `.venv/` are ignored by Git.
-- Generated `data/*.json` and `data/*.jsonl` monitoring reports are ignored by Git.
-- No API keys should be hardcoded in source files or documentation.
+- Secrets are loaded from `.env` file
+- `.env` and `.venv/` are gitignored
+- Generated `data/*.json` and `data/*.jsonl` reports are gitignored
+- No API keys are hardcoded in source files or documentation
+- Always keep credentials secure and never share `.env` files
+
+## Contributing
+
+Contributions are welcome! Feel free to fork, create feature branches, and submit pull requests to improve DataSentinel.
+
+## Support
+
+For issues, questions, or feature requests, please open a GitHub issue in this repository.
+
+---
+
+**Last Updated**: April 24, 2026
+**Repository**: [https://github.com/Dhyan-S-Kanapadi/DataSentinel](https://github.com/Dhyan-S-Kanapadi/DataSentinel)

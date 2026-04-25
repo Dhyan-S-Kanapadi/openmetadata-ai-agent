@@ -90,7 +90,7 @@ def main() -> None:
     print("Testing OpenMetadata connection...")
     token = get_token()
     if token:
-        print(f"Token acquired: {token[:20]}...")
+        print("Token acquired from configuration.")
     fetch_tables(token)
 
 

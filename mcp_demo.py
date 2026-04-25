@@ -171,12 +171,71 @@ def print_pipelines(pipelines: Any) -> None:
         )
 
 
-async def call_json_tool(session: ClientSession, tool_name: str) -> Any:
-    result = await session.call_tool(tool_name, arguments={})
+def print_quality_summary(summary: Any) -> None:
+    print_section("DATA QUALITY FROM OPENMETADATA")
+    if not summary:
+        print("No data quality summary returned.")
+        return
+    if not isinstance(summary, dict):
+        print(json.dumps(summary, indent=2, ensure_ascii=False))
+        return
+
+    print(f"Total tests: {summary.get('total_tests', 0)}")
+    print(f"Status counts: {shorten(summary.get('status_counts', {}), 80)}")
+
+    failed_tests = summary.get("failed_tests", [])
+    if failed_tests:
+        print()
+        print("Failed tests:")
+        for index, test_case in enumerate(failed_tests, start=1):
+            print(
+                f"{index:<4} "
+                f"{shorten(test_case.get('name'), 42):<42} "
+                f"{shorten(test_case.get('entity'), 42):<42} "
+                f"{shorten(test_case.get('status'), 14)}"
+            )
+        return
+
+    recent_tests = summary.get("recent_tests", [])
+    if not recent_tests:
+        print("No data quality tests returned.")
+        return
+
+    print()
+    print("Recent tests:")
+    print(f"{'#':<4} {'Name':<42} {'Entity':<42} Status")
+    print("-" * 100)
+    for index, test_case in enumerate(recent_tests[:10], start=1):
+        print(
+            f"{index:<4} "
+            f"{shorten(test_case.get('name'), 42):<42} "
+            f"{shorten(test_case.get('entity'), 42):<42} "
+            f"{shorten(test_case.get('status'), 14)}"
+        )
+
+
+async def call_json_tool(
+    session: ClientSession,
+    tool_name: str,
+    arguments: dict[str, Any] | None = None,
+) -> Any:
+    result = await session.call_tool(tool_name, arguments=arguments or {})
     if result.isError:
         message = extract_tool_text(result) or "The server returned an MCP tool error."
         raise RuntimeError(f"{tool_name} failed: {message}")
     return parse_tool_json(result)
+
+
+def print_tool_health(results: dict[str, Any]) -> None:
+    print_section("MCP TOOL HEALTH")
+    for tool_name, value in results.items():
+        if isinstance(value, list):
+            detail = f"{len(value)} records"
+        elif isinstance(value, dict):
+            detail = f"{len(value)} top-level fields"
+        else:
+            detail = shorten(value, 70)
+        print(f"[OK] {tool_name}: {detail}")
 
 
 async def main() -> int:
@@ -201,7 +260,18 @@ async def main() -> int:
 
                 tools = await session.list_tools()
                 available = {tool.name for tool in tools.tools}
-                required = {"list_tables", "list_pipelines"}
+                required = {
+                    "ask_agent",
+                    "get_quality_summary",
+                    "get_table_lineage",
+                    "list_pipelines",
+                    "list_quality_failures",
+                    "list_quality_tests",
+                    "list_tables",
+                    "list_undocumented_tables",
+                    "list_unowned_tables",
+                    "trigger_pipeline",
+                }
                 missing = sorted(required - available)
                 if missing:
                     print("MCP server is running, but expected tools are missing:")
@@ -216,8 +286,47 @@ async def main() -> int:
                 tables = await call_json_tool(session, "list_tables")
                 print_tables(tables)
 
+                unowned_tables = await call_json_tool(session, "list_unowned_tables")
+                undocumented_tables = await call_json_tool(
+                    session, "list_undocumented_tables"
+                )
+
                 pipelines = await call_json_tool(session, "list_pipelines")
                 print_pipelines(pipelines)
+
+                quality_summary = await call_json_tool(session, "get_quality_summary")
+                print_quality_summary(quality_summary)
+                quality_tests = await call_json_tool(
+                    session,
+                    "list_quality_tests",
+                    {"status": "Unprocessed", "limit": 5},
+                )
+                quality_failures = await call_json_tool(session, "list_quality_failures")
+
+                lineage = {}
+                if isinstance(tables, list) and tables:
+                    table_name = tables[0].get("name")
+                    if table_name:
+                        lineage = await call_json_tool(
+                            session,
+                            "get_table_lineage",
+                            {"table_fqn": table_name},
+                        )
+
+                print_tool_health(
+                    {
+                        "list_tables": tables,
+                        "list_unowned_tables": unowned_tables,
+                        "list_undocumented_tables": undocumented_tables,
+                        "list_pipelines": pipelines,
+                        "get_quality_summary": quality_summary,
+                        "list_quality_tests": quality_tests,
+                        "list_quality_failures": quality_failures,
+                        "get_table_lineage": lineage,
+                        "trigger_pipeline": "registered; not called by demo to avoid starting a pipeline",
+                        "ask_agent": "registered; use for natural-language questions",
+                    }
+                )
 
                 print_section("DONE")
                 print("MCP demo completed successfully.")

@@ -59,9 +59,31 @@ def get_quality_failures_tool() -> str:
 
 
 @tool
-def get_lineage_tool(table_fqn: str) -> str:
+def get_quality_tests_tool() -> str:
+    """Get recent data quality test cases and their current status from OpenMetadata"""
+    result = tools.get_quality_tests()
+    return json.dumps(result)
+
+
+@tool
+def get_quality_summary_tool() -> str:
+    """Get a summary of OpenMetadata data quality test coverage and status counts"""
+    result = tools.get_quality_summary()
+    return json.dumps(result)
+
+
+@tool
+def get_lineage_tool(
+    table_fqn: str,
+    upstream_depth: int = 2,
+    downstream_depth: int = 2,
+) -> str:
     """Get lineage of a table by its fully qualified name from OpenMetadata"""
-    result = tools.get_lineage(table_fqn)
+    result = tools.get_lineage(
+        table_fqn,
+        upstream_depth=upstream_depth,
+        downstream_depth=downstream_depth,
+    )
     return json.dumps(result)
 
 
@@ -72,6 +94,8 @@ TOOLS = [
     get_pipelines_tool,
     trigger_pipeline_tool,
     get_quality_failures_tool,
+    get_quality_tests_tool,
+    get_quality_summary_tool,
     get_lineage_tool,
 ]
 
@@ -89,6 +113,9 @@ SYSTEM_MESSAGE = SystemMessage(
         "You help data teams manage their data platform by "
         "querying pipelines, data quality, lineage, and governance. "
         "Use the available tools to answer questions accurately. "
+        "For multi-topic questions, call every relevant read-only tool before "
+        "summarizing. For example, a health summary should check tables, "
+        "pipelines, and data quality instead of answering from one category. "
         "Always provide clear and concise answers in plain text."
     )
 )

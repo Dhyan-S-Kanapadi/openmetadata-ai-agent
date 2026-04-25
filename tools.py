@@ -1,4 +1,5 @@
 import base64
+from urllib.parse import quote
 
 import requests
 
@@ -8,6 +9,13 @@ from config import (
     OPENMETADATA_PASSWORD,
     OPENMETADATA_URL,
 )
+
+MAX_API_LIMIT = 100
+DEFAULT_API_LIMIT = 20
+DEFAULT_QUALITY_LIMIT = 50
+MAX_LINEAGE_DEPTH = 5
+DEFAULT_LINEAGE_DEPTH = 2
+FAILED_QUALITY_STATUSES = {"failed", "failure"}
 
 
 def _build_headers(token: str | None = None) -> dict:
@@ -67,7 +75,24 @@ def _request(method: str, path: str, **kwargs):
     return res
 
 
-def get_tables(limit=20):
+def _bounded_limit(limit: int | str | None, default: int = DEFAULT_API_LIMIT) -> int:
+    try:
+        parsed = int(limit) if limit is not None else default
+    except (TypeError, ValueError):
+        parsed = default
+    return max(1, min(parsed, MAX_API_LIMIT))
+
+
+def _bounded_depth(depth: int | str | None, default: int = DEFAULT_LINEAGE_DEPTH) -> int:
+    try:
+        parsed = int(depth) if depth is not None else default
+    except (TypeError, ValueError):
+        parsed = default
+    return max(0, min(parsed, MAX_LINEAGE_DEPTH))
+
+
+def get_tables(limit=DEFAULT_API_LIMIT):
+    limit = _bounded_limit(limit)
     res = _request(
         "GET",
         "/tables",
@@ -122,27 +147,114 @@ def trigger_pipeline(pipeline_id: str):
     return f"Failed to trigger pipeline: {res.status_code}"
 
 
-def get_quality_failures():
+def _quality_status(test_case: dict) -> str:
+    result = test_case.get("testCaseResult") or {}
+    return (
+        result.get("testCaseStatus")
+        or test_case.get("entityStatus")
+        or "Unknown"
+    )
+
+
+def _quality_parameters(test_case: dict) -> dict:
+    parameters = {}
+    for parameter in test_case.get("parameterValues", []):
+        name = parameter.get("name")
+        if name:
+            parameters[name] = parameter.get("value")
+    return parameters
+
+
+def _format_quality_test(test_case: dict) -> dict:
+    result = test_case.get("testCaseResult") or {}
+    return {
+        "id": test_case.get("id"),
+        "name": test_case.get("name"),
+        "display_name": test_case.get("displayName"),
+        "fully_qualified_name": test_case.get("fullyQualifiedName"),
+        "entity": test_case.get("entityFQN"),
+        "entity_link": test_case.get("entityLink"),
+        "description": test_case.get("description"),
+        "status": _quality_status(test_case),
+        "updated_at": test_case.get("updatedAt"),
+        "updated_by": test_case.get("updatedBy"),
+        "parameters": _quality_parameters(test_case),
+        "result": {
+            "timestamp": result.get("timestamp"),
+            "passed_rows": result.get("passedRows"),
+            "failed_rows": result.get("failedRows"),
+            "sample_data": result.get("sampleData"),
+        },
+    }
+
+
+def get_quality_tests(limit=DEFAULT_QUALITY_LIMIT, status: str | None = None):
+    limit = _bounded_limit(limit, default=DEFAULT_QUALITY_LIMIT)
     res = _request(
         "GET",
         "/dataQuality/testCases",
-        params={"limit": 50, "testCaseStatus": "Failed"},
+        params={"limit": limit, "fields": "testCaseResult"},
     )
     data = res.json().get("data", [])
+    tests = [_format_quality_test(test_case) for test_case in data]
+
+    if status:
+        expected = status.casefold()
+        tests = [
+            test_case
+            for test_case in tests
+            if str(test_case.get("status", "")).casefold() == expected
+        ]
+
+    return tests
+
+
+def get_quality_failures(limit=DEFAULT_QUALITY_LIMIT):
+    tests = get_quality_tests(limit=limit)
     return [
-        {
-            "name": test_case.get("name"),
-            "table": test_case.get("entityLink"),
-            "status": test_case.get("testCaseResult", {}).get("testCaseStatus"),
-        }
-        for test_case in data
+        test_case
+        for test_case in tests
+        if str(test_case.get("status", "")).casefold() in FAILED_QUALITY_STATUSES
     ]
 
 
-def get_lineage(table_fqn: str):
+def get_quality_summary(limit=DEFAULT_QUALITY_LIMIT):
+    tests = get_quality_tests(limit=limit)
+    status_counts = {}
+    for test_case in tests:
+        status = test_case.get("status") or "Unknown"
+        status_counts[status] = status_counts.get(status, 0) + 1
+
+    failed_tests = [
+        test_case
+        for test_case in tests
+        if str(test_case.get("status", "")).casefold() in FAILED_QUALITY_STATUSES
+    ]
+
+    return {
+        "total_tests": len(tests),
+        "status_counts": status_counts,
+        "failed_tests": failed_tests,
+        "recent_tests": tests,
+    }
+
+
+def get_lineage(
+    table_fqn: str,
+    upstream_depth: int = DEFAULT_LINEAGE_DEPTH,
+    downstream_depth: int = DEFAULT_LINEAGE_DEPTH,
+):
+    table_fqn = str(table_fqn or "").strip()
+    if not table_fqn:
+        raise ValueError("table_fqn is required.")
+
+    encoded_table_fqn = quote(table_fqn, safe="")
     res = _request(
         "GET",
-        f"/lineage/table/name/{table_fqn}",
-        params={"upstreamDepth": 2, "downstreamDepth": 2},
+        f"/lineage/table/name/{encoded_table_fqn}",
+        params={
+            "upstreamDepth": _bounded_depth(upstream_depth),
+            "downstreamDepth": _bounded_depth(downstream_depth),
+        },
     )
     return res.json()

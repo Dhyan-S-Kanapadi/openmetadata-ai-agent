@@ -129,7 +129,8 @@ def _send_webhook(url: str, report: Any, decision: Any) -> NotificationResult:
             return NotificationResult(
                 channel="webhook",
                 status="failed",
-                message=f"Webhook returned HTTP {response.status_code}: {response.text}",
+                message=f"Webhook returned HTTP {response.status_code}.",
+                metadata={"status_code": response.status_code},
             )
         return NotificationResult(
             channel="webhook",
@@ -144,7 +145,14 @@ def _send_webhook(url: str, report: Any, decision: Any) -> NotificationResult:
 
 def _send_email(email_to: str, report: Any, decision: Any) -> NotificationResult:
     smtp_host = os.getenv("DATASENTINEL_EMAIL_HOST")
-    smtp_port = int(os.getenv("DATASENTINEL_EMAIL_PORT", "587"))
+    try:
+        smtp_port = int(os.getenv("DATASENTINEL_EMAIL_PORT", "587"))
+    except ValueError:
+        return NotificationResult(
+            channel="email",
+            status="failed",
+            message="DATASENTINEL_EMAIL_PORT must be a number.",
+        )
     smtp_user = os.getenv("DATASENTINEL_EMAIL_USER")
     smtp_password = os.getenv("DATASENTINEL_EMAIL_PASSWORD")
     email_from = os.getenv("DATASENTINEL_EMAIL_FROM", smtp_user or "datasentinel@local")
